@@ -1,10 +1,11 @@
 #include "ffmpeg.h"
+#include <stdio.h>
 
 AVFrame *getFrame(const char *inputfile)
 {
     AVFormatContext *format_ctx = NULL;
     AVCodecContext *codec_ctx = NULL;
-    AVCodec *codec = NULL;
+    const AVCodec *codec = NULL;
     AVFrame *frame = NULL;
     AVPacket packet;
 
@@ -109,4 +110,29 @@ AVFrame *getFrame(const char *inputfile)
     avformat_close_input(&format_ctx);
 
     return frame;
+}
+
+AVFrame *toARGB(AVFrame *frame)
+{
+
+    AVFrame *out_frame = av_frame_alloc();
+    if (!out_frame) {
+        fprintf(stderr, "Could not allocate destination frame\n");
+        return NULL;
+    }
+
+    out_frame->height = frame->height;
+    out_frame->width = frame->width;
+    out_frame->format = AV_PIX_FMT_ARGB;
+
+    if (av_frame_get_buffer(out_frame, 32) < 0) {
+        fprintf(stderr, "Could not allocate buffer for destination frame\n");
+        av_frame_free(&out_frame);
+        return NULL;
+    }
+
+    struct SwsContext *sws_ctx = sws_getContext(frame->width, frame->height, frame->format, frame->width, frame->height, AV_PIX_FMT_BGRA, SWS_BICUBLIN, NULL, NULL, NULL);
+    sws_scale(sws_ctx, (const uint8_t * const *)frame->data, frame->linesize, 0, frame->height, out_frame->data, out_frame->linesize);
+    sws_freeContext(sws_ctx);
+    return out_frame;
 }

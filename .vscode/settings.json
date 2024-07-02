@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "*.tcc": "c",
+        "charconv": "c",
+        "compare": "c",
+        "format": "c",
+        "iomanip": "c",
+        "ostream": "c",
+        "thread": "c",
+        "*.inc": "c"
+    }
+}

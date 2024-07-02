@@ -178,7 +178,7 @@ draw_frame(struct client_state *state)
     }
 
     struct wl_shm_pool *pool = wl_shm_create_pool(state->wl_shm, fd, size);
-    struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0, width, height, width * 4, WL_SHM_FORMAT_ABGR8888);
+    struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0, width, height, width * 4, WL_SHM_FORMAT_ARGB8888);
     wl_shm_pool_destroy(pool);
     close(fd);
 
@@ -188,6 +188,8 @@ draw_frame(struct client_state *state)
         munmap(data, size);
         return NULL;
     }
+
+    frame = toARGB(frame);
 /*
     if (frame->format != AV_PIX_FMT_ARGB) {
         fprintf(stderr, "Frame format is not ARGB\n");
@@ -287,6 +289,9 @@ wl_keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
         //fprintf(stderr, "utf8: '%s'\n", buf);
     }
 }
+
+void update_surface();
+
 static void
 wl_keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
                 uint32_t serial, uint32_t time, uint32_t key, uint32_t state)
@@ -300,15 +305,17 @@ wl_keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
     //fprintf(stderr, "key %s: sym: %-12s (%d), ", action, buf, sym);
     xkb_state_key_get_utf8(client_state->xkb_state, keycode, buf, sizeof(buf));
     //fprintf(stderr, "utf8: '%s'\n", buf);
-    if(key == 30){
+    /*
+    if(key == 30 && action == "press"){
         client_state->img_x += 10;
-    } else if(key == 31){
+        update_surface();
+    } else if(key == 31 && action == "press"){
         client_state->img_x -= 10;
-    } else if(key == 32){
+    } else if(key == 32 && action == "press"){
         client_state->img_y += 10;
-    } else if(key == 33){
+    } else if(key == 33 && action == "press"){
         client_state->img_y -= 10;
-    }
+    }*/
 }
 
 static void
@@ -441,20 +448,35 @@ static const struct wl_registry_listener wl_registry_listener = {
     .global_remove = registry_global_remove,
 };
 
+void update_surface()
+{
+    struct client_state state = { 0 };
+    struct wl_callback *cb = wl_surface_frame(state.wl_surface);
+	wl_callback_add_listener(cb, &wl_surface_frame_listener, &state);
+}
+
 int
 main(int argc, char *argv[])
 {
     struct client_state state = { 0 };
 
-    if(argc != 4){
-        printf("needs path xcord ycord");
-        return 1;
-    }
     state.img_path = argv[1];
-    state.img_x = atoi(argv[2]);
-    state.img_y = atoi(argv[3]);
+
     state.height = 1080;
     state.width = 1920;
+
+    if(atoi(argv[2]) == -1 || atoi(argv[3]) == -1)
+    {
+        state.img_x = (state.width / 2) - (state.img_width / 2);
+        state.img_y = (state.height / 2) - (state.img_height / 2);
+        printf("%s\n", state.img_x);
+        printf("%s\n", state.img_y);
+    }else{
+        state.img_x = atoi(argv[2]);
+        state.img_y = atoi(argv[3]);
+    }
+    
+    
     state.wl_display = wl_display_connect(NULL);
     state.wl_registry = wl_display_get_registry(state.wl_display);
     state.xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
@@ -462,15 +484,14 @@ main(int argc, char *argv[])
     wl_display_roundtrip(state.wl_display);
 
     state.wl_surface = wl_compositor_create_surface(state.wl_compositor);
-    state.xdg_surface = xdg_wm_base_get_xdg_surface(
-            state.xdg_wm_base, state.wl_surface);
+    state.xdg_surface = xdg_wm_base_get_xdg_surface(state.xdg_wm_base, state.wl_surface);
     xdg_surface_add_listener(state.xdg_surface, &xdg_surface_listener, &state);
     state.xdg_toplevel = xdg_surface_get_toplevel(state.xdg_surface);
     xdg_toplevel_set_title(state.xdg_toplevel, "Choo Choo");
     wl_surface_commit(state.wl_surface);
 
     struct wl_callback *cb = wl_surface_frame(state.wl_surface);
-	wl_callback_add_listener(cb, &wl_surface_frame_listener, &state);
+	//wl_callback_add_listener(cb, &wl_surface_frame_listener, &state);
       
     while (wl_display_dispatch(state.wl_display)) {
         /* This space deliberately left blank */
@@ -478,4 +499,4 @@ main(int argc, char *argv[])
 
     return 0;
 }
-//gcc -o client client.c xdg-shell-protocol.c ffmpeg.c -lwayland-client -lm -lavcodec -lavformat -lavutil -lxkbcommon
+//gcc -o client client.c xdg-shell-protocol.c ffmpeg.c -lwayland-client -lm -lavcodec -lavformat -lavutil -lswscale -lxkbcommon
