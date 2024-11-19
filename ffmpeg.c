@@ -1,25 +1,26 @@
 #include "ffmpeg.h"
 #include <stdio.h>
 
-AVFrame *getFrame(const char *inputfile)
-{
+FrameArray getFrames(const char *inputfile) {
     AVFormatContext *format_ctx = NULL;
     AVCodecContext *codec_ctx = NULL;
     const AVCodec *codec = NULL;
     AVFrame *frame = NULL;
     AVPacket packet;
+    FrameArray frame_array = {NULL, 0};
+    int ret;
 
     // Open the input file
     if (avformat_open_input(&format_ctx, inputfile, NULL, NULL) < 0) {
         fprintf(stderr, "Failed to open input file\n");
-        return NULL;
+        return frame_array;
     }
 
     // Retrieve stream information
     if (avformat_find_stream_info(format_ctx, NULL) < 0) {
         fprintf(stderr, "Failed to retrieve stream information\n");
         avformat_close_input(&format_ctx);
-        return NULL;
+        return frame_array;
     }
 
     // Find the first video stream
@@ -34,7 +35,7 @@ AVFrame *getFrame(const char *inputfile)
     if (video_stream_index == -1) {
         fprintf(stderr, "No video stream found in the input file\n");
         avformat_close_input(&format_ctx);
-        return NULL;
+        return frame_array;
     }
 
     // Allocate codec context
@@ -42,7 +43,7 @@ AVFrame *getFrame(const char *inputfile)
     if (!codec_ctx) {
         fprintf(stderr, "Failed to allocate codec context\n");
         avformat_close_input(&format_ctx);
-        return NULL;
+        return frame_array;
     }
 
     // Copy codec parameters from stream
@@ -50,7 +51,7 @@ AVFrame *getFrame(const char *inputfile)
         fprintf(stderr, "Failed to copy codec parameters to context\n");
         avcodec_free_context(&codec_ctx);
         avformat_close_input(&format_ctx);
-        return NULL;
+        return frame_array;
     }
 
     // Find the decoder for the codec
@@ -59,7 +60,7 @@ AVFrame *getFrame(const char *inputfile)
         fprintf(stderr, "Codec not found\n");
         avcodec_free_context(&codec_ctx);
         avformat_close_input(&format_ctx);
-        return NULL;
+        return frame_array;
     }
 
     // Open codec
@@ -67,40 +68,44 @@ AVFrame *getFrame(const char *inputfile)
         fprintf(stderr, "Failed to open codec\n");
         avcodec_free_context(&codec_ctx);
         avformat_close_input(&format_ctx);
-        return NULL;
+        return frame_array;
     }
 
-    // Allocate frame
-    frame = av_frame_alloc();
-    if (!frame) {
-        fprintf(stderr, "Failed to allocate frame\n");
-        avcodec_close(codec_ctx);
-        avcodec_free_context(&codec_ctx);
-        avformat_close_input(&format_ctx);
-        return NULL;
+    frame_array.frame_rate = av_q2d(codec_ctx->framerate);
+    if (frame_array.frame_rate <= 0) {
+        frame_array.frame_rate = 30.0; // Fallback to 30 FPS
     }
+    
+    // Allocate initial array for frames
+    int allocated_frames = 10;
+    frame_array.frames = (AVFrame **)malloc(sizeof(AVFrame *) * allocated_frames);
 
     // Read frames
     while (av_read_frame(format_ctx, &packet) >= 0) {
         if (packet.stream_index == video_stream_index) {
-            int ret = avcodec_send_packet(codec_ctx, &packet);
+            ret = avcodec_send_packet(codec_ctx, &packet);
             if (ret < 0) {
                 fprintf(stderr, "Error sending packet to decoder\n");
                 av_packet_unref(&packet);
-                break;
+                continue;
             }
-            ret = avcodec_receive_frame(codec_ctx, frame);
+
+            while ((ret = avcodec_receive_frame(codec_ctx, frame = av_frame_alloc())) >= 0) {
+                // Store the frame
+                if (frame_array.frame_count >= allocated_frames) {
+                    allocated_frames *= 2;
+                    frame_array.frames = (AVFrame **)realloc(frame_array.frames, sizeof(AVFrame *) * allocated_frames);
+                }
+                frame_array.frames[frame_array.frame_count++] = frame;
+
+                // Allocate a new frame for the next decode
+                frame = av_frame_alloc();
+            }
+
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
                 av_packet_unref(&packet);
                 continue;
-            } else if (ret < 0) {
-                fprintf(stderr, "Error receiving frame from decoder\n");
-                av_packet_unref(&packet);
-                break;
             }
-
-            av_packet_unref(&packet);
-            break; // Only need one frame
         }
         av_packet_unref(&packet);
     }
@@ -109,12 +114,20 @@ AVFrame *getFrame(const char *inputfile)
     avcodec_free_context(&codec_ctx);
     avformat_close_input(&format_ctx);
 
-    return frame;
+    return frame_array;
+}
+
+void freeFrameArray(FrameArray *frame_array) {
+    for (int i = 0; i < frame_array->frame_count; i++) {
+        av_frame_free(&frame_array->frames[i]);
+    }
+    free(frame_array->frames);
+    frame_array->frames = NULL;
+    frame_array->frame_count = 0;
 }
 
 AVFrame *toARGB(AVFrame *frame)
 {
-
     AVFrame *out_frame = av_frame_alloc();
     if (!out_frame) {
         fprintf(stderr, "Could not allocate destination frame\n");

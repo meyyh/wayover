@@ -3,5 +3,11 @@
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 
-AVFrame *getFrame(const char *inputfile);
+typedef struct {
+    AVFrame **frames;
+    int frame_count;
+    int frame_rate;
+} FrameArray;
+
+FrameArray getFrames(const char *inputfile);
 AVFrame *toARGB(AVFrame *frame);
