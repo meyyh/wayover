@@ -474,3 +474,5 @@ main(int argc, char *argv[])
 
     return 0;
 }
+//gcc -o client client.c xdg-shell-protocol.c ffmpeg.c -lwayland-client -lm -lavcodec -lavformat -lavutil -lswscale -lxkbcommon
+//./client ./sc3h2.mov 500 0
