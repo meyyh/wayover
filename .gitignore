@@ -2,9 +2,12 @@
 *
 # Unignore all with extensions
 !*.*
+# Unignore Makefile
+!Makefile
 # Unignore all dirs
 !*/
-# Ignore all PNG files
+# Ignore object files and pngs
+*.o
 *.png
 
 
